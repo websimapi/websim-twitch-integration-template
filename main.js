@@ -10,10 +10,14 @@ const iframeViewer = document.getElementById('iframe-viewer');
 const websimFrame = document.getElementById('websim-frame');
 const closeViewerButton = document.getElementById('close-viewer-button');
 const skipButton = document.getElementById('skip-button');
+const flagButton = document.getElementById('flag-button');
+const flaggedUrlsList = document.getElementById('flagged-urls-list');
+
 // --- Settings Elements ---
 const minDurationInput = document.getElementById('min-duration-input');
 const maxDurationInput = document.getElementById('max-duration-input');
 const backgroundQueueToggle = document.getElementById('background-queue-toggle');
+
 // --- User Submission Settings Elements ---
 const allowUserUrlsToggle = document.getElementById('allow-user-urls-toggle');
 const userSiteDurationInput = document.getElementById('user-site-duration-input');
@@ -24,6 +28,7 @@ const modsSubsOnlyToggle = document.getElementById('mods-subs-only-toggle');
 // --- IFRAME VIEWER LOGIC ---
 const userQueue = [];
 const backgroundQueue = [];
+let currentSite = null; // Holds the data for the site currently being displayed
 let isDisplayingSite = false;
 let siteDisplayTimer = null; // To hold the setTimeout ID
 let isLoadingProjects = false;
@@ -35,6 +40,54 @@ const MAX_SITE_DISPLAY_DURATION = 60 * 1000; // 1 minute
 const RECENTLY_DISPLAYED_MAX_SIZE = 500;
 const recentlyDisplayedSites = new Set();
 const userLastSubmission = new Map();
+let flaggedSites = new Set();
+
+/**
+ * Loads the list of flagged sites from localStorage into memory.
+ */
+function loadFlaggedSites() {
+    const storedFlags = localStorage.getItem('flaggedSites');
+    if (storedFlags) {
+        try {
+            flaggedSites = new Set(JSON.parse(storedFlags));
+        } catch (e) {
+            console.error("Error parsing flagged sites from localStorage:", e);
+            flaggedSites = new Set();
+        }
+    }
+    renderFlaggedUrls();
+}
+
+/**
+ * Saves the current set of flagged sites to localStorage.
+ */
+function saveFlaggedSites() {
+    localStorage.setItem('flaggedSites', JSON.stringify(Array.from(flaggedSites)));
+}
+
+/**
+ * Renders the list of flagged URLs on the main page.
+ */
+function renderFlaggedUrls() {
+    flaggedUrlsList.innerHTML = '';
+    if (flaggedSites.size === 0) {
+        flaggedUrlsList.textContent = 'No sites have been flagged.';
+        return;
+    }
+    flaggedSites.forEach(siteIdentifier => {
+        const entry = document.createElement('div');
+        entry.className = 'flagged-entry';
+        entry.textContent = siteIdentifier;
+        entry.title = 'Click to un-flag this site';
+        entry.addEventListener('click', () => {
+            flaggedSites.delete(siteIdentifier);
+            saveFlaggedSites();
+            renderFlaggedUrls();
+            console.log(`Un-flagged site: ${siteIdentifier}`);
+        });
+        flaggedUrlsList.appendChild(entry);
+    });
+}
 
 /**
  * Fetches a paginated list of public projects to populate the background queue.
@@ -57,7 +110,10 @@ async function fetchBackgroundProjects() {
         if (projects && projects.data) {
             // Filter for projects that have a viewable site and haven't been shown recently.
             const newSites = projects.data
-                .filter(item => item.site && item.site.id && !recentlyDisplayedSites.has(item.site.id))
+                .filter(item => {
+                    const siteId = item.site?.id;
+                    return siteId && !recentlyDisplayedSites.has(siteId) && !flaggedSites.has(siteId);
+                })
                 .map(item => ({
                     id: item.site.id,
                     url: `https://websim.com/c/${item.site.id}`
@@ -99,7 +155,25 @@ function skipToNextSite() {
     }
     // Immediately process the next item in the queue
     isDisplayingSite = false;
+    currentSite = null; // Clear the current site reference
     processQueue();
+}
+
+/**
+ * Flags the current site, saves it, and then skips to the next one.
+ */
+function flagAndSkip() {
+    if (currentSite) {
+        // Use the ID for background sites, and the full URL for user-submitted ones
+        const identifier = currentSite.id || currentSite.url;
+        console.log(`Flagging site: ${identifier}`);
+        flaggedSites.add(identifier);
+        saveFlaggedSites();
+        renderFlaggedUrls();
+    } else {
+        console.log('No current site to flag.');
+    }
+    skipToNextSite();
 }
 
 /**
@@ -154,6 +228,7 @@ function processQueue() {
     
     if (nextSite) {
         isDisplayingSite = true;
+        currentSite = nextSite; // Store the current site details
         websimFrame.src = nextSite.url;
         
         // Clear any previous timer just in case
@@ -163,6 +238,7 @@ function processQueue() {
 
         siteDisplayTimer = setTimeout(() => {
             isDisplayingSite = false;
+            currentSite = null; // Clear site when its time is up
             processQueue(); // Process next in queue
         }, displayDuration);
     } else {
@@ -179,6 +255,12 @@ function processQueue() {
 function addSiteToUserQueue(url, tags) {
     const user = tags['display-name'];
     const userId = tags['user-id'];
+
+    // 0. Check if site is flagged
+    if (flaggedSites.has(url)) {
+        console.log(`Submission blocked: URL ${url} is flagged.`);
+        return;
+    }
 
     // 1. Check if user submissions are enabled at all
     if (!allowUserUrlsToggle.checked) return;
@@ -337,6 +419,10 @@ skipButton.addEventListener('click', () => {
     skipToNextSite();
 });
 
+flagButton.addEventListener('click', () => {
+    flagAndSkip();
+});
+
 document.addEventListener('keydown', (e) => {
     // Hide viewer if user presses Escape key
     if (e.key === "Escape" && iframeViewer.style.display === 'block') {
@@ -348,3 +434,4 @@ document.addEventListener('keydown', (e) => {
 // --- INITIALIZATION ---
 // Pre-fetch some sites on page load so we're ready to go.
 fetchBackgroundProjects();
+loadFlaggedSites();
