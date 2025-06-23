@@ -5,37 +5,131 @@ const connectButton = document.getElementById('connect-button');
 const channelInput = document.getElementById('channel-input');
 const statusDiv = document.getElementById('connection-status');
 const commandLogDiv = document.getElementById('command-log');
-const fullscreenButton = document.getElementById('fullscreen-button');
+const showViewerButton = document.getElementById('fullscreen-button'); // Renamed for clarity in code
 const iframeViewer = document.getElementById('iframe-viewer');
 const websimFrame = document.getElementById('websim-frame');
 const closeViewerButton = document.getElementById('close-viewer-button');
 
 // --- IFRAME VIEWER LOGIC ---
-const siteQueue = [];
+const userQueue = [];
+const backgroundQueue = [];
 let isDisplayingSite = false;
+let isLoadingProjects = false;
+let nextCursor = null;
+const BACKGROUND_QUEUE_FETCH_THRESHOLD = 20;
 const SITE_DISPLAY_DURATION = 15 * 1000; // 15 seconds
+// Keep track of a few hundred recent sites to avoid quick repeats
+const RECENTLY_DISPLAYED_MAX_SIZE = 500;
+const recentlyDisplayedSites = new Set();
 
-function processSiteQueue() {
-    if (isDisplayingSite || siteQueue.length === 0) {
-        return;
+/**
+ * Fetches a paginated list of public projects to populate the background queue.
+ */
+async function fetchBackgroundProjects() {
+    if (isLoadingProjects) return;
+    isLoadingProjects = true;
+    console.log('Fetching new background projects...');
+
+    // Use the `after` cursor for pagination if we have one.
+    const url = `/api/v1/projects?first=100&sort_by=created_at&posted=true${nextCursor ? `&after=${nextCursor}` : ''}`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status}`);
+        }
+        const { projects } = await response.json();
+
+        if (projects && projects.data) {
+            // Filter for projects that have a viewable site and haven't been shown recently.
+            const newSites = projects.data
+                .filter(item => item.site && item.site.id && !recentlyDisplayedSites.has(item.site.id))
+                .map(item => ({
+                    id: item.site.id,
+                    url: `https://websim.com/c/${item.site.id}`
+                }));
+
+            if (newSites.length > 0) {
+                // Shuffle the new sites to randomize the order
+                for (let i = newSites.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [newSites[i], newSites[j]] = [newSites[j], newSites[i]];
+                }
+                backgroundQueue.push(...newSites);
+                console.log(`Added ${newSites.length} new sites to background queue. Total: ${backgroundQueue.length}`);
+            }
+
+            // Update cursor for the next fetch. If there's no next page, we'll start over from the beginning on the next cycle.
+            nextCursor = projects.meta.has_next_page ? projects.meta.end_cursor : null;
+        }
+    } catch (error) {
+        console.error('Error fetching background projects:', error);
+    } finally {
+        isLoadingProjects = false;
+        // If the queue is still empty, maybe we've reached the end. Try again after a delay.
+        if (backgroundQueue.length === 0) {
+            console.log("No new projects found, will retry fetching later.");
+        }
     }
-    isDisplayingSite = true;
-    const url = siteQueue.shift();
-    console.log(`Displaying ${url}. Queue length: ${siteQueue.length}`);
-    websimFrame.src = url;
-
-    setTimeout(() => {
-        isDisplayingSite = false;
-        processSiteQueue(); // Process next in queue
-    }, SITE_DISPLAY_DURATION);
 }
 
-function addSiteToQueue(url) {
-    // Basic validation to avoid duplicates and ensure it's a valid http/https URL
-    if (url.startsWith('http') && !siteQueue.includes(url)) {
-        siteQueue.push(url);
-        console.log(`Added ${url} to queue.`);
-        processSiteQueue(); // Start processing if not already running
+/**
+ * Processes the next site from the user queue or background queue.
+ */
+function processQueue() {
+    if (isDisplayingSite) {
+        return;
+    }
+
+    let nextSite = null;
+
+    // Prioritize the user queue
+    if (userQueue.length > 0) {
+        nextSite = userQueue.shift();
+        console.log(`Displaying from user queue: ${nextSite.url}. Queue length: ${userQueue.length}`);
+    } else {
+        // Fetch more background sites if the queue is running low
+        if (backgroundQueue.length < BACKGROUND_QUEUE_FETCH_THRESHOLD && !isLoadingProjects) {
+            fetchBackgroundProjects();
+        }
+        if (backgroundQueue.length > 0) {
+            nextSite = backgroundQueue.shift();
+            console.log(`Displaying from background queue: ${nextSite.url}. Queue length: ${backgroundQueue.length}`);
+            
+            // Track displayed sites to avoid repeats
+            recentlyDisplayedSites.add(nextSite.id);
+            if (recentlyDisplayedSites.size > RECENTLY_DISPLAYED_MAX_SIZE) {
+                const oldestSite = recentlyDisplayedSites.values().next().value;
+                recentlyDisplayedSites.delete(oldestSite);
+            }
+        }
+    }
+    
+    if (nextSite) {
+        isDisplayingSite = true;
+        websimFrame.src = nextSite.url;
+
+        setTimeout(() => {
+            isDisplayingSite = false;
+            processQueue(); // Process next in queue
+        }, SITE_DISPLAY_DURATION);
+    } else {
+         // If both queues are empty, try again in a few seconds.
+         setTimeout(processQueue, 5000);
+    }
+}
+
+/**
+ * Adds a site from chat to the high-priority user queue.
+ * @param {string} url - The websim URL to display.
+ */
+function addSiteToUserQueue(url) {
+    if (url.startsWith('http')) {
+        // The user can submit the same URL multiple times.
+        // We just wrap it in an object to be consistent with background queue items.
+        userQueue.push({ id: url, url: url });
+        console.log(`Added ${url} to user queue.`);
+        processQueue(); // Start processing if not already running
     }
 }
 
@@ -63,7 +157,7 @@ function handleMessage(tags, message) {
     const urlRegex = /(https?:\/\/(?:www\.)?websim\.(?:com|ai)(?:\/[^\s]*)?)/g;
     const matches = message.match(urlRegex);
     if (matches) {
-        matches.forEach(url => addSiteToQueue(url));
+        matches.forEach(url => addSiteToUserQueue(url));
     }
 }
 
@@ -122,27 +216,32 @@ connectButton.addEventListener('click', () => {
     }
 });
 
-fullscreenButton.addEventListener('click', () => {
-    iframeViewer.style.display = 'block';
-    if (iframeViewer.requestFullscreen) {
-        iframeViewer.requestFullscreen().catch(err => {
-            console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-        });
+showViewerButton.addEventListener('click', () => {
+    if (iframeViewer.style.display === 'block') {
+        iframeViewer.style.display = 'none';
+        websimFrame.src = 'about:blank'; // Clear the iframe to stop execution
+    } else {
+        iframeViewer.style.display = 'block';
+        // Kick off the queue processor if it's not already running
+        if (!isDisplayingSite) {
+            processQueue();
+        }
     }
 });
 
 closeViewerButton.addEventListener('click', () => {
-    if (document.fullscreenElement) {
-        document.exitFullscreen();
-    }
     iframeViewer.style.display = 'none';
     websimFrame.src = 'about:blank'; // Clear the iframe
 });
 
-document.addEventListener('fullscreenchange', () => {
-    // Hide viewer if user exits fullscreen (e.g., with Escape key)
-    if (!document.fullscreenElement) {
+document.addEventListener('keydown', (e) => {
+    // Hide viewer if user presses Escape key
+    if (e.key === "Escape" && iframeViewer.style.display === 'block') {
         iframeViewer.style.display = 'none';
         websimFrame.src = 'about:blank';
     }
 });
+
+// --- INITIALIZATION ---
+// Pre-fetch some sites on page load so we're ready to go.
+fetchBackgroundProjects();
