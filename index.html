@@ -241,16 +241,38 @@
         <div id="settings-container">
             <h2>Settings</h2>
             <div class="setting">
-                <label for="min-duration-input">Min Slide Duration (seconds)</label>
+                <label for="min-duration-input">Min Background Slide Duration (s)</label>
                 <input type="number" id="min-duration-input" value="30" min="5">
             </div>
             <div class="setting">
-                <label for="max-duration-input">Max Slide Duration (seconds)</label>
+                <label for="max-duration-input">Max Background Slide Duration (s)</label>
                 <input type="number" id="max-duration-input" value="60" min="5">
             </div>
             <div class="setting">
                 <label for="background-queue-toggle">Enable background site carousel</label>
                 <input type="checkbox" id="background-queue-toggle" checked>
+            </div>
+            
+            <h2 style="margin-top: 20px; font-size: 1.2em; border-top: 1px solid #444; padding-top: 15px;">User Submission Settings</h2>
+            <div class="setting">
+                <label for="allow-user-urls-toggle" title="Allow users in chat to submit websim URLs to the queue.">Allow chat to submit sites</label>
+                <input type="checkbox" id="allow-user-urls-toggle" checked>
+            </div>
+             <div class="setting">
+                <label for="user-site-duration-input" title="How long user-submitted sites should be displayed.">User Site Duration (s)</label>
+                <input type="number" id="user-site-duration-input" value="60" min="5">
+            </div>
+            <div class="setting">
+                <label for="user-queue-limit-input" title="Maximum number of user-submitted sites allowed in the queue at one time.">User queue size limit</label>
+                <input type="number" id="user-queue-limit-input" value="20" min="1">
+            </div>
+            <div class="setting">
+                <label for="user-cooldown-input" title="How many seconds a user must wait before submitting another URL.">User submission cooldown (s)</label>
+                <input type="number" id="user-cooldown-input" value="60" min="0">
+            </div>
+            <div class="setting">
+                <label for="mods-subs-only-toggle" title="Only allow Twitch moderators and subscribers to submit URLs.">Mods/subs submissions only</label>
+                <input type="checkbox" id="mods-subs-only-toggle">
             </div>
         </div>
 

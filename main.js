@@ -13,6 +13,12 @@ const closeViewerButton = document.getElementById('close-viewer-button');
 const minDurationInput = document.getElementById('min-duration-input');
 const maxDurationInput = document.getElementById('max-duration-input');
 const backgroundQueueToggle = document.getElementById('background-queue-toggle');
+// --- User Submission Settings Elements ---
+const allowUserUrlsToggle = document.getElementById('allow-user-urls-toggle');
+const userSiteDurationInput = document.getElementById('user-site-duration-input');
+const userQueueLimitInput = document.getElementById('user-queue-limit-input');
+const userCooldownInput = document.getElementById('user-cooldown-input');
+const modsSubsOnlyToggle = document.getElementById('mods-subs-only-toggle');
 
 // --- IFRAME VIEWER LOGIC ---
 const userQueue = [];
@@ -26,6 +32,7 @@ const MAX_SITE_DISPLAY_DURATION = 60 * 1000; // 1 minute
 // Keep track of a few hundred recent sites to avoid quick repeats
 const RECENTLY_DISPLAYED_MAX_SIZE = 500;
 const recentlyDisplayedSites = new Set();
+const userLastSubmission = new Map();
 
 /**
  * Fetches a paginated list of public projects to populate the background queue.
@@ -87,11 +94,15 @@ function processQueue() {
     }
 
     let nextSite = null;
+    let displayDuration;
 
     // Prioritize the user queue
     if (userQueue.length > 0) {
         nextSite = userQueue.shift();
         console.log(`Displaying from user queue: ${nextSite.url}. Queue length: ${userQueue.length}`);
+        let userDuration = parseInt(userSiteDurationInput.value, 10) * 1000;
+        if(isNaN(userDuration) || userDuration < 5000) userDuration = 60000;
+        displayDuration = userDuration;
     } else if (backgroundQueueToggle.checked) { // Check if background queue is enabled
         // Fetch more background sites if the queue is running low
         if (backgroundQueue.length < BACKGROUND_QUEUE_FETCH_THRESHOLD && !isLoadingProjects) {
@@ -107,27 +118,27 @@ function processQueue() {
                 const oldestSite = recentlyDisplayedSites.values().next().value;
                 recentlyDisplayedSites.delete(oldestSite);
             }
+
+            // Calculate duration for background sites
+            let minDuration = parseInt(minDurationInput.value, 10) * 1000;
+            let maxDuration = parseInt(maxDurationInput.value, 10) * 1000;
+
+            if (isNaN(minDuration) || minDuration < 5000) {
+                minDuration = 5000;
+                minDurationInput.value = 5; // Correct UI
+            }
+            if (isNaN(maxDuration) || maxDuration < minDuration) {
+                maxDuration = minDuration;
+                maxDurationInput.value = minDuration / 1000; // Correct UI
+            }
+            displayDuration = minDuration + Math.random() * (maxDuration - minDuration);
         }
     }
     
     if (nextSite) {
         isDisplayingSite = true;
         websimFrame.src = nextSite.url;
-
-        let minDuration = parseInt(minDurationInput.value, 10) * 1000;
-        let maxDuration = parseInt(maxDurationInput.value, 10) * 1000;
-
-        if (isNaN(minDuration) || minDuration < 5000) {
-            minDuration = 5000;
-            minDurationInput.value = 5; // Correct UI
-        }
-        if (isNaN(maxDuration) || maxDuration < minDuration) {
-            maxDuration = minDuration;
-            maxDurationInput.value = minDuration / 1000; // Correct UI
-        }
         
-        const displayDuration = minDuration + Math.random() * (maxDuration - minDuration);
-
         setTimeout(() => {
             isDisplayingSite = false;
             processQueue(); // Process next in queue
@@ -139,16 +150,61 @@ function processQueue() {
 }
 
 /**
- * Adds a site from chat to the high-priority user queue.
+ * Validates and adds a site from chat to the high-priority user queue.
  * @param {string} url - The websim URL to display.
+ * @param {object} tags - The TMI.js tags for the user who sent the message.
  */
-function addSiteToUserQueue(url) {
-    if (url.startsWith('http')) {
-        // The user can submit the same URL multiple times.
-        // We just wrap it in an object to be consistent with background queue items.
-        userQueue.push({ id: url, url: url });
-        console.log(`Added ${url} to user queue.`);
-        processQueue(); // Start processing if not already running
+function addSiteToUserQueue(url, tags) {
+    const user = tags['display-name'];
+    const userId = tags['user-id'];
+
+    // 1. Check if user submissions are enabled at all
+    if (!allowUserUrlsToggle.checked) return;
+
+    // 2. Check for permissions (mod/sub)
+    if (modsSubsOnlyToggle.checked && !tags.mod && !tags.subscriber) {
+        console.log(`Submission blocked: ${user} is not a mod or subscriber.`);
+        return;
+    }
+
+    // 3. Check user cooldown
+    const cooldown = parseInt(userCooldownInput.value, 10) * 1000;
+    if (cooldown > 0 && userLastSubmission.has(userId)) {
+        const lastTime = userLastSubmission.get(userId);
+        if (Date.now() - lastTime < cooldown) {
+            console.log(`Submission blocked: ${user} is on cooldown.`);
+            return;
+        }
+    }
+    
+    // 4. Check queue size limit
+    const queueLimit = parseInt(userQueueLimitInput.value, 10);
+    if (userQueue.length >= queueLimit) {
+        console.log(`Submission blocked: User queue is full.`);
+        return;
+    }
+
+    // 5. Basic URL validation
+    try {
+        const parsedUrl = new URL(url);
+        const acceptedHosts = ['websim.com', 'www.websim.com', 'websim.ai', 'www.websim.ai'];
+        if (!acceptedHosts.includes(parsedUrl.hostname)) {
+             console.log(`Submission blocked: Invalid hostname ${parsedUrl.hostname}`);
+             return;
+        }
+    } catch(e) {
+        console.log(`Submission blocked: Invalid URL format ${url}`);
+        return; // Not a valid URL
+    }
+
+    // 6. Add to queue and update cooldown timestamp
+    userQueue.push({ id: url, url: url, submittedBy: user });
+    userLastSubmission.set(userId, Date.now());
+    console.log(`Added ${url} to user queue (submitted by ${user}).`);
+    
+    // 7. Start processing if not already running
+    if (!isDisplayingSite) {
+        processQueue();
     }
 }
 
@@ -172,11 +228,13 @@ function handleMessage(tags, message) {
         }
     }
 
-    // 2. Check for websim URLs
-    const urlRegex = /(https?:\/\/(?:www\.)?websim\.(?:com|ai)(?:\/[^\s]*)?)/g;
-    const matches = message.match(urlRegex);
-    if (matches) {
-        matches.forEach(url => addSiteToUserQueue(url));
+    // 2. Check for websim URLs if the feature is enabled
+    if (allowUserUrlsToggle.checked) {
+        const urlRegex = /https?:\/\/websim\.(?:com|ai)\/(?:c\/[a-zA-Z0-9_.-]+|p\/[a-zA-Z0-9_.-]+|@[a-zA-Z0-9_]+\/[a-zA-Z0-9_-]+(?:\/\d+)?)/g;
+        const matches = message.match(urlRegex);
+        if (matches) {
+            matches.forEach(url => addSiteToUserQueue(url, tags));
+        }
     }
 }
 
