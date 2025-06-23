@@ -94,4 +94,3 @@ export function connectToTwitch(channel, commandHandler, statusCallback) {
         statusCallback(`Error connecting: ${err}`);
     });
 }
-
