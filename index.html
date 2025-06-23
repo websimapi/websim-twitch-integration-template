@@ -139,6 +139,43 @@
             font-family: "Courier New", Courier, monospace;
         }
 
+        #iframe-viewer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            z-index: 1000;
+            display: none;
+        }
+
+        #websim-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        #close-viewer-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 30px;
+            width: 50px;
+            height: 50px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 1001;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0;
+            line-height: 1;
+        }
+
     </style>
 </head>
 <body>
@@ -157,6 +194,7 @@
         <div id="controls">
             <input type="text" id="channel-input" placeholder="Enter Twitch channel name...">
             <button id="connect-button">Connect</button>
+            <button id="fullscreen-button">Show Viewer</button>
         </div>
         <div id="connection-status">Status: Disconnected</div>
 
@@ -174,6 +212,11 @@
         </div>
     </div>
     
+    <div id="iframe-viewer">
+        <iframe id="websim-frame" src="about:blank" allow="autoplay; fullscreen; xr-spatial-tracking; execution-while-out-of-viewport; execution-while-not-rendered"></iframe>
+        <button id="close-viewer-button">&times;</button>
+    </div>
+
     <script type="module" src="main.js"></script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>

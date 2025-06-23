@@ -39,10 +39,10 @@ function addChatMessage(username, message, tags) {
 /**
  * Connects to Twitch chat and sets up handlers.
  * @param {string} channel - The Twitch channel to connect to.
- * @param {function} commandHandler - A function to call when a command is received.
+ * @param {function} messageHandler - A function to call for every message received.
  * @param {function} statusCallback - A function to call with connection status updates.
  */
-export function connectToTwitch(channel, commandHandler, statusCallback) {
+export function connectToTwitch(channel, messageHandler, statusCallback) {
     // Disconnect any existing client
     if (client && client.readyState() === 'OPEN') {
         client.disconnect();
@@ -68,13 +68,9 @@ export function connectToTwitch(channel, commandHandler, statusCallback) {
 
         addChatMessage(tags['display-name'], message, tags);
 
-        // Check if the message is a command (starts with '!')
-        if (message.startsWith('!')) {
-            const [command, ...args] = message.substring(1).split(/\s+/);
-            if (command.length > 0 && commandHandler) {
-                // Pass the command and user info to the application logic
-                commandHandler(command.toLowerCase(), tags['display-name'], args, tags);
-            }
+        // Pass the full message details to the application logic
+        if (messageHandler) {
+            messageHandler(tags, message);
         }
     });
 
