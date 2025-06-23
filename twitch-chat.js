@@ -1,4 +1,4 @@
-import tmi from 'tmi.js';
+// tmi is loaded as a global from tmi.js in index.html
 
 let client = null;
 
