@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Integration Template</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "tmi.js": "https://cdn.skypack.dev/tmi.js"
+        }
+    }
+    </script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            background-color: #18181b; /* Twitch dark grey */
+            color: #efeff1; /* Twitch light text */
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 20px;
+            min-height: 100vh;
+            flex-wrap: wrap;
+        }
+
+        #app-container {
+            flex-grow: 1;
+            max-width: 800px;
+            background-color: #1f1f23;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        #chat-container {
+            width: 340px;
+            height: 80vh;
+            background-color: #1f1f23;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #444;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        
+        #chat-title {
+            padding: 10px 15px;
+            font-weight: bold;
+            background-color: #2a2a2e;
+            border-bottom: 1px solid #444;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+
+        #chat-messages {
+            flex-grow: 1;
+            padding: 10px;
+            overflow-y: scroll;
+            display: flex;
+            flex-direction: column-reverse; /* New messages appear at the bottom */
+        }
+
+        .chat-message {
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: #2a2a2e;
+            border-radius: 4px;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        .chat-message .username {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+
+        h1, h2 {
+            color: #a970ff; /* Twitch purple */
+            border-bottom: 2px solid #a970ff;
+            padding-bottom: 5px;
+        }
+
+        p, li {
+            line-height: 1.6;
+            color: #dedee3;
+        }
+
+        code {
+            background-color: #333;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: "Courier New", Courier, monospace;
+        }
+
+        #controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            background-color: #3a3a3d;
+            color: #efeff1;
+            border: 1px solid #555;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: #9146ff; /* Twitch purple */
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #772ce8;
+        }
+        
+        #connection-status {
+            margin-top: 15px;
+            font-style: italic;
+        }
+        
+        #command-log-container {
+             margin-top: 20px;
+        }
+        
+        #command-log {
+            background-color: #0e0e10;
+            border: 1px solid #444;
+            height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: "Courier New", Courier, monospace;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <h1>Twitch Chat Integration Template</h1>
+        <p>This template provides a basic framework for connecting your web application to Twitch chat. It handles connecting to a channel, displaying chat messages, and routing commands to your application logic.</p>
+        
+        <h2>Instructions</h2>
+        <ol>
+            <li>Enter a Twitch channel name below (e.g., <code>gamesdonequick</code>).</li>
+            <li>Click <strong>Connect</strong> to start receiving messages.</li>
+            <li>Open your browser's developer console (F12) to see logged commands.</li>
+            <li>Edit <code>main.js</code> to define your own commands and application logic.</li>
+        </ol>
+
+        <div id="controls">
+            <input type="text" id="channel-input" placeholder="Enter Twitch channel name...">
+            <button id="connect-button">Connect</button>
+        </div>
+        <div id="connection-status">Status: Disconnected</div>
+
+        <div id="command-log-container">
+            <h2>Command Log</h2>
+            <p>Commands starting with <code>!</code> sent in chat will appear here.</p>
+            <div id="command-log"></div>
+        </div>
+    </div>
+
+    <div id="chat-container">
+        <div id="chat-title">Twitch Chat</div>
+        <div id="chat-messages">
+            <!-- Chat messages will be dynamically inserted here -->
+        </div>
+    </div>
+    
+    <script type="module" src="main.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
+
