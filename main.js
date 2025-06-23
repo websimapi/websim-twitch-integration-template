@@ -9,6 +9,7 @@ const showViewerButton = document.getElementById('fullscreen-button'); // Rename
 const iframeViewer = document.getElementById('iframe-viewer');
 const websimFrame = document.getElementById('websim-frame');
 const closeViewerButton = document.getElementById('close-viewer-button');
+const skipButton = document.getElementById('skip-button');
 // --- Settings Elements ---
 const minDurationInput = document.getElementById('min-duration-input');
 const maxDurationInput = document.getElementById('max-duration-input');
@@ -24,6 +25,7 @@ const modsSubsOnlyToggle = document.getElementById('mods-subs-only-toggle');
 const userQueue = [];
 const backgroundQueue = [];
 let isDisplayingSite = false;
+let siteDisplayTimer = null; // To hold the setTimeout ID
 let isLoadingProjects = false;
 let nextCursor = null;
 const BACKGROUND_QUEUE_FETCH_THRESHOLD = 20;
@@ -86,6 +88,21 @@ async function fetchBackgroundProjects() {
 }
 
 /**
+ * Interrupts the current site and shows the next one from the queue.
+ */
+function skipToNextSite() {
+    console.log('User skipped to next site.');
+    // Clear the currently scheduled timer for the next site
+    if (siteDisplayTimer) {
+        clearTimeout(siteDisplayTimer);
+        siteDisplayTimer = null;
+    }
+    // Immediately process the next item in the queue
+    isDisplayingSite = false;
+    processQueue();
+}
+
+/**
  * Processes the next site from the user queue or background queue.
  */
 function processQueue() {
@@ -139,7 +156,12 @@ function processQueue() {
         isDisplayingSite = true;
         websimFrame.src = nextSite.url;
         
-        setTimeout(() => {
+        // Clear any previous timer just in case
+        if (siteDisplayTimer) {
+            clearTimeout(siteDisplayTimer);
+        }
+
+        siteDisplayTimer = setTimeout(() => {
             isDisplayingSite = false;
             processQueue(); // Process next in queue
         }, displayDuration);
@@ -309,6 +331,10 @@ showViewerButton.addEventListener('click', () => {
 closeViewerButton.addEventListener('click', () => {
     iframeViewer.style.display = 'none';
     websimFrame.src = 'about:blank'; // Clear the iframe
+});
+
+skipButton.addEventListener('click', () => {
+    skipToNextSite();
 });
 
 document.addEventListener('keydown', (e) => {
