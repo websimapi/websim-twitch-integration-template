@@ -11,6 +11,7 @@ const websimFrame = document.getElementById('websim-frame');
 const closeViewerButton = document.getElementById('close-viewer-button');
 const skipButton = document.getElementById('skip-button');
 const flagButton = document.getElementById('flag-button');
+const pauseButton = document.getElementById('pause-button');
 const flaggedUrlsList = document.getElementById('flagged-urls-list');
 
 // --- Settings Elements ---
@@ -48,6 +49,9 @@ const displayHistory = [];
 const MAX_HISTORY_SIZE = 50; 
 const userLastSubmission = new Map();
 let flaggedSites = new Set();
+let isPaused = false;
+let timerStartTime = 0;
+let remainingTime = 0;
 
 // --- Advanced Content Discovery State ---
 const discoveryFeeds = [
@@ -337,7 +341,7 @@ function flagAndSkip() {
  * Processes the next site from the user queue or background queue.
  */
 function processQueue() {
-    if (isDisplayingSite) {
+    if (isDisplayingSite || isPaused) {
         return;
     }
 
@@ -389,6 +393,10 @@ function processQueue() {
         currentSite = nextSite; // Store the current site details
         websimFrame.src = nextSite.url;
         
+        // Store duration and start time for pause/resume functionality
+        remainingTime = displayDuration;
+        timerStartTime = Date.now();
+
         // Clear any previous timer just in case
         if (siteDisplayTimer) {
             clearTimeout(siteDisplayTimer);
@@ -401,7 +409,10 @@ function processQueue() {
         }, displayDuration);
     } else {
          // If both queues are empty (or background is disabled), try again in a few seconds.
-         setTimeout(processQueue, 5000);
+         // Don't queue up another attempt if we are paused.
+         if (!isPaused) {
+            setTimeout(processQueue, 5000);
+         }
     }
 }
 
@@ -612,6 +623,43 @@ skipButton.addEventListener('click', () => {
 
 flagButton.addEventListener('click', () => {
     flagAndSkip();
+});
+
+pauseButton.addEventListener('click', () => {
+    isPaused = !isPaused;
+
+    if (isPaused) {
+        // --- PAUSE ---
+        pauseButton.textContent = 'Play';
+        if (siteDisplayTimer) {
+            clearTimeout(siteDisplayTimer);
+            siteDisplayTimer = null;
+            // Calculate and store how much time was left on the timer
+            const elapsedTime = Date.now() - timerStartTime;
+            remainingTime -= elapsedTime;
+            if (remainingTime < 0) remainingTime = 0;
+            console.log(`Paused. Time remaining: ${Math.round(remainingTime / 1000)}s`);
+        } else {
+            console.log("Paused between sites.");
+        }
+    } else {
+        // --- RESUME ---
+        pauseButton.textContent = 'Pause';
+        if (isDisplayingSite && remainingTime > 0) {
+            console.log(`Resuming. Time remaining: ${Math.round(remainingTime / 1000)}s`);
+            // Set a new timer with the remaining time
+            timerStartTime = Date.now();
+            siteDisplayTimer = setTimeout(() => {
+                isDisplayingSite = false;
+                currentSite = null;
+                processQueue();
+            }, remainingTime);
+        } else {
+             // If we were paused between sites, just kick off the queue.
+            console.log("Resuming. Processing next in queue.");
+            processQueue();
+        }
+    }
 });
 
 clearHistoryButton.addEventListener('click', clearWatchedHistory);
