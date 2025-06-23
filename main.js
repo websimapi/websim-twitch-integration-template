@@ -17,7 +17,8 @@ let isDisplayingSite = false;
 let isLoadingProjects = false;
 let nextCursor = null;
 const BACKGROUND_QUEUE_FETCH_THRESHOLD = 20;
-const SITE_DISPLAY_DURATION = 15 * 1000; // 15 seconds
+const MIN_SITE_DISPLAY_DURATION = 30 * 1000; // 30 seconds
+const MAX_SITE_DISPLAY_DURATION = 60 * 1000; // 1 minute
 // Keep track of a few hundred recent sites to avoid quick repeats
 const RECENTLY_DISPLAYED_MAX_SIZE = 500;
 const recentlyDisplayedSites = new Set();
@@ -109,10 +110,12 @@ function processQueue() {
         isDisplayingSite = true;
         websimFrame.src = nextSite.url;
 
+        const displayDuration = MIN_SITE_DISPLAY_DURATION + Math.random() * (MAX_SITE_DISPLAY_DURATION - MIN_SITE_DISPLAY_DURATION);
+
         setTimeout(() => {
             isDisplayingSite = false;
             processQueue(); // Process next in queue
-        }, SITE_DISPLAY_DURATION);
+        }, displayDuration);
     } else {
          // If both queues are empty, try again in a few seconds.
          setTimeout(processQueue, 5000);
