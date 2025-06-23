@@ -9,6 +9,10 @@ const showViewerButton = document.getElementById('fullscreen-button'); // Rename
 const iframeViewer = document.getElementById('iframe-viewer');
 const websimFrame = document.getElementById('websim-frame');
 const closeViewerButton = document.getElementById('close-viewer-button');
+// --- Settings Elements ---
+const minDurationInput = document.getElementById('min-duration-input');
+const maxDurationInput = document.getElementById('max-duration-input');
+const backgroundQueueToggle = document.getElementById('background-queue-toggle');
 
 // --- IFRAME VIEWER LOGIC ---
 const userQueue = [];
@@ -88,7 +92,7 @@ function processQueue() {
     if (userQueue.length > 0) {
         nextSite = userQueue.shift();
         console.log(`Displaying from user queue: ${nextSite.url}. Queue length: ${userQueue.length}`);
-    } else {
+    } else if (backgroundQueueToggle.checked) { // Check if background queue is enabled
         // Fetch more background sites if the queue is running low
         if (backgroundQueue.length < BACKGROUND_QUEUE_FETCH_THRESHOLD && !isLoadingProjects) {
             fetchBackgroundProjects();
@@ -110,14 +114,26 @@ function processQueue() {
         isDisplayingSite = true;
         websimFrame.src = nextSite.url;
 
-        const displayDuration = MIN_SITE_DISPLAY_DURATION + Math.random() * (MAX_SITE_DISPLAY_DURATION - MIN_SITE_DISPLAY_DURATION);
+        let minDuration = parseInt(minDurationInput.value, 10) * 1000;
+        let maxDuration = parseInt(maxDurationInput.value, 10) * 1000;
+
+        if (isNaN(minDuration) || minDuration < 5000) {
+            minDuration = 5000;
+            minDurationInput.value = 5; // Correct UI
+        }
+        if (isNaN(maxDuration) || maxDuration < minDuration) {
+            maxDuration = minDuration;
+            maxDurationInput.value = minDuration / 1000; // Correct UI
+        }
+        
+        const displayDuration = minDuration + Math.random() * (maxDuration - minDuration);
 
         setTimeout(() => {
             isDisplayingSite = false;
             processQueue(); // Process next in queue
         }, displayDuration);
     } else {
-         // If both queues are empty, try again in a few seconds.
+         // If both queues are empty (or background is disabled), try again in a few seconds.
          setTimeout(processQueue, 5000);
     }
 }
