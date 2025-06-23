@@ -120,6 +120,13 @@
             background-color: #772ce8;
         }
         
+        button.secondary-button {
+            background-color: #5c5c64;
+        }
+        button.secondary-button:hover {
+            background-color: #4a4a52;
+        }
+
         #connection-status {
             margin-top: 15px;
             font-style: italic;
@@ -292,6 +299,24 @@
             border-bottom: none;
         }
 
+        .advanced-setting {
+            padding-left: 20px;
+            border-left: 2px solid #555;
+            margin-left: 5px;
+            margin-top: 10px;
+            transition: all 0.3s ease-in-out;
+        }
+        
+        .advanced-setting.hidden {
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            margin-top: 0;
+            overflow: hidden;
+            opacity: 0;
+            border-left-width: 0;
+        }
+
     </style>
 </head>
 <body>
@@ -342,6 +367,33 @@
             <div class="setting">
                 <label for="mods-subs-only-toggle" title="Only allow Twitch moderators and subscribers to submit URLs.">Mods/subs submissions only</label>
                 <input type="checkbox" id="mods-subs-only-toggle">
+            </div>
+
+            <h2 style="margin-top: 20px; font-size: 1.2em; border-top: 1px solid #444; padding-top: 15px;">Content Discovery</h2>
+            <p style="font-size: 0.9em; color: #adadb8; margin-top: -10px; margin-bottom: 15px;">Controls for the background site carousel.</p>
+            <div class="setting">
+                <label for="clear-history-button" title="Clears the list of sites you've already seen in this session and resets the content feeds.">Session History</label>
+                <button id="clear-history-button" class="secondary-button">Clear Watched History</button>
+            </div>
+            
+            <h3 style="margin-top: 20px; font-size: 1.1em; border-top: 1px solid #444; padding-top: 15px;">Advanced Discovery Methods</h3>
+             <div class="setting">
+                <label for="advanced-discovery-toggle" title="Enable deeper exploration for content when the trending feeds run low.">Enable Advanced Discovery</label>
+                <input type="checkbox" id="advanced-discovery-toggle" checked>
+            </div>
+            <div class="advanced-setting">
+                <div class="setting">
+                    <label for="explore-creators-toggle" title="When a site is shown, find more sites from its original creator.">Explore from Creators</label>
+                    <input type="checkbox" id="explore-creators-toggle" checked>
+                </div>
+                <div class="setting">
+                    <label for="explore-network-toggle" title="Find sites from creators followed by the original creator.">Explore Creator's Network</label>
+                    <input type="checkbox" id="explore-network-toggle" checked>
+                </div>
+                <div class="setting">
+                    <label for="explore-remixes-toggle" title="Find remixes of sites that are shown.">Explore Project Remixes</label>
+                    <input type="checkbox" id="explore-remixes-toggle" checked>
+                </div>
             </div>
         </div>
 

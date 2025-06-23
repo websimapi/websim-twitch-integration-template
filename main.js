@@ -25,6 +25,14 @@ const userQueueLimitInput = document.getElementById('user-queue-limit-input');
 const userCooldownInput = document.getElementById('user-cooldown-input');
 const modsSubsOnlyToggle = document.getElementById('mods-subs-only-toggle');
 
+// --- Content Discovery Elements ---
+const clearHistoryButton = document.getElementById('clear-history-button');
+const advancedDiscoveryToggle = document.getElementById('advanced-discovery-toggle');
+const exploreCreatorsToggle = document.getElementById('explore-creators-toggle');
+const exploreNetworkToggle = document.getElementById('explore-network-toggle');
+const exploreRemixesToggle = document.getElementById('explore-remixes-toggle');
+const advancedSettingsContainer = document.querySelector('.advanced-setting');
+
 // --- IFRAME VIEWER LOGIC ---
 const userQueue = [];
 const backgroundQueue = [];
@@ -32,15 +40,64 @@ let currentSite = null; // Holds the data for the site currently being displayed
 let isDisplayingSite = false;
 let siteDisplayTimer = null; // To hold the setTimeout ID
 let isLoadingProjects = false;
-let nextCursor = null;
 const BACKGROUND_QUEUE_FETCH_THRESHOLD = 20;
-const MIN_SITE_DISPLAY_DURATION = 30 * 1000; // 30 seconds
-const MAX_SITE_DISPLAY_DURATION = 60 * 1000; // 1 minute
-// Keep track of a few hundred recent sites to avoid quick repeats
-const RECENTLY_DISPLAYED_MAX_SIZE = 500;
+// Keep track of all sites displayed in this session to avoid repeats.
 const recentlyDisplayedSites = new Set();
+// Keep a shorter history of full site objects to seed advanced discovery
+const displayHistory = [];
+const MAX_HISTORY_SIZE = 50; 
 const userLastSubmission = new Map();
 let flaggedSites = new Set();
+
+// --- Advanced Content Discovery State ---
+const discoveryFeeds = [
+    { name: 'hot', range: 'week' },
+    { name: 'viral', range: 'month' },
+    { name: 'top', range: 'all' },
+    { name: 'engaging', range: 'all' },
+    { name: 'new', range: 'day' }
+];
+let currentFeedIndex = 0;
+// Use a map to store pagination offsets for each feed type
+const feedOffsets = new Map(discoveryFeeds.map(f => [f.name, 0]));
+
+/**
+ * A helper to process API results, filter them, and add to the background queue.
+ * @param {Array} items - The array of site/project data from a Websim API endpoint.
+ * @param {string} sourceName - A name for the source for logging purposes (e.g., 'trending:hot').
+ * @returns {number} The number of new sites added to the queue.
+ */
+function filterAndAddSites(items, sourceName) {
+    if (!items || items.length === 0) return 0;
+
+    const newSites = items
+        .filter(item => {
+            const siteId = item.site?.id;
+            // We need a valid site, project, and author to proceed
+            if (!siteId || !item.project?.id || !item.project?.created_by?.username) return false;
+            
+            // Check against session-wide duplicate list and user's flag list
+            return !recentlyDisplayedSites.has(siteId) && !flaggedSites.has(siteId);
+        })
+        .map(item => ({ 
+            id: item.site.id, 
+            url: `https://websim.com/c/${item.site.id}`,
+            projectId: item.project.id,
+            authorUsername: item.project.created_by.username
+        }));
+
+    if (newSites.length > 0) {
+        // Shuffle before adding to randomize the order of intake
+        for (let i = newSites.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [newSites[i], newSites[j]] = [newSites[j], newSites[i]];
+        }
+        backgroundQueue.push(...newSites);
+        console.log(`Added ${newSites.length} new sites from '${sourceName}'. Total queue: ${backgroundQueue.length}`);
+        return newSites.length;
+    }
+    return 0;
+}
 
 /**
  * Loads the list of flagged sites from localStorage into memory.
@@ -90,56 +147,156 @@ function renderFlaggedUrls() {
 }
 
 /**
- * Fetches a paginated list of public projects to populate the background queue.
+ * Fetches projects from a specific creator.
+ * @param {string} username The creator's username.
  */
-async function fetchBackgroundProjects() {
+async function fetchCreatorProjects(username) {
+    if (!username) return;
+    console.log(`Advanced Discovery: Fetching projects for creator '${username}'...`);
+    const url = `/api/v1/users/${username}/projects?has_site=true&limit=50&sort_by=updated_at`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+        const { projects } = await response.json();
+        if (projects && projects.data) {
+            filterAndAddSites(projects.data, `creator:${username}`);
+        }
+    } catch (error) {
+        console.error(`Error fetching creator projects for ${username}:`, error);
+    }
+}
+
+/**
+ * Fetches projects from users that a specific creator follows.
+ * @param {string} username The creator's username.
+ */
+async function fetchCreatorNetworkProjects(username) {
+    if (!username) return;
+    console.log(`Advanced Discovery: Fetching projects from network of '${username}'...`);
+    const url = `/api/v1/users/${username}/following/projects?has_site=true&limit=50`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+        const { projects } = await response.json();
+        if (projects && projects.data) {
+            filterAndAddSites(projects.data, `network:${username}`);
+        }
+    } catch (error) {
+        console.error(`Error fetching creator network projects for ${username}:`, error);
+    }
+}
+
+/**
+ * Fetches remixes (descendants) of a given project.
+ * @param {string} projectId The ID of the project to find remixes for.
+ */
+async function fetchRemixProjects(projectId) {
+    if (!projectId) return;
+    console.log(`Advanced Discovery: Fetching remixes for project '${projectId}'...`);
+    const url = `/api/v1/projects/${projectId}/descendants?has_site=true&limit=50`;
+     try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+        const { projects } = await response.json();
+        if (projects && projects.data) {
+            filterAndAddSites(projects.data, `remixes:${projectId}`);
+        }
+    } catch (error) {
+        console.error(`Error fetching remixes for ${projectId}:`, error);
+    }
+}
+
+/**
+ * Runs the advanced discovery methods using a seed from the display history.
+ */
+async function runAdvancedDiscovery() {
+    if (!advancedDiscoveryToggle.checked || displayHistory.length === 0) {
+        return;
+    }
+
+    console.log("Running advanced discovery phase...");
+    
+    // Pick a random seed from our recent history
+    const seed = displayHistory[Math.floor(Math.random() * displayHistory.length)];
+    if (!seed) {
+        console.log("Advanced discovery skipped: No seed available.");
+        return;
+    }
+
+    const tasks = [];
+    if (exploreCreatorsToggle.checked) {
+        tasks.push(fetchCreatorProjects(seed.authorUsername));
+    }
+    if (exploreNetworkToggle.checked) {
+        tasks.push(fetchCreatorNetworkProjects(seed.authorUsername));
+    }
+    if (exploreRemixesToggle.checked) {
+        tasks.push(fetchRemixProjects(seed.projectId));
+    }
+
+    if (tasks.length > 0) {
+        await Promise.all(tasks);
+        console.log("Advanced discovery phase complete.");
+    }
+}
+
+/**
+ * Fetches projects from various feeds to populate the background queue.
+ * This is the main function for sourcing new content for the background carousel.
+ */
+async function populateBackgroundQueue() {
     if (isLoadingProjects) return;
     isLoadingProjects = true;
-    console.log('Fetching new background projects...');
 
-    // Use the `after` cursor for pagination if we have one.
-    const url = `/api/v1/projects?first=100&sort_by=created_at&posted=true${nextCursor ? `&after=${nextCursor}` : ''}`;
+    // --- Phase 1: Fetch from standard trending feeds ---
+    const feedConfig = discoveryFeeds[currentFeedIndex];
+    const offset = feedOffsets.get(feedConfig.name) || 0;
+    const limit = 100;
+
+    console.log(`Fetching background projects from '${feedConfig.name}' feed (offset: ${offset})...`);
+    
+    const url = `/api/v1/feed/trending?feed=${feedConfig.name}&range=${feedConfig.range}&limit=${limit}&offset=${offset}`;
 
     try {
         const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`API request failed: ${response.status}`);
+        if (!response.ok) throw new Error(`API request failed: ${response.status}`);
+        const { feed } = await response.json();
+
+        let addedCount = 0;
+        if (feed && feed.data) {
+            addedCount = filterAndAddSites(feed.data, `trending:${feedConfig.name}`);
         }
-        const { projects } = await response.json();
 
-        if (projects && projects.data) {
-            // Filter for projects that have a viewable site and haven't been shown recently.
-            const newSites = projects.data
-                .filter(item => {
-                    const siteId = item.site?.id;
-                    return siteId && !recentlyDisplayedSites.has(siteId) && !flaggedSites.has(siteId);
-                })
-                .map(item => ({
-                    id: item.site.id,
-                    url: `https://websim.com/c/${item.site.id}`
-                }));
-
-            if (newSites.length > 0) {
-                // Shuffle the new sites to randomize the order
-                for (let i = newSites.length - 1; i > 0; i--) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [newSites[i], newSites[j]] = [newSites[j], newSites[i]];
-                }
-                backgroundQueue.push(...newSites);
-                console.log(`Added ${newSites.length} new sites to background queue. Total: ${backgroundQueue.length}`);
-            }
-
-            // Update cursor for the next fetch. If there's no next page, we'll start over from the beginning on the next cycle.
-            nextCursor = projects.meta.has_next_page ? projects.meta.end_cursor : null;
+        // --- Logic for cycling through trending feeds ---
+        if (!feed || !feed.data || feed.data.length < limit) {
+            console.log(`Reached end of '${feedConfig.name}' feed. Resetting its offset and moving to the next feed.`);
+            feedOffsets.set(feedConfig.name, 0);
+            currentFeedIndex = (currentFeedIndex + 1) % discoveryFeeds.length;
+        } else {
+            feedOffsets.set(feedConfig.name, offset + limit);
+            currentFeedIndex = (currentFeedIndex + 1) % discoveryFeeds.length; // Cycle for variety
         }
+
+        // --- Phase 2: If queue is still low, trigger advanced discovery ---
+        if (backgroundQueue.length < BACKGROUND_QUEUE_FETCH_THRESHOLD) {
+             await runAdvancedDiscovery();
+        }
+
+        // If after all that, we still have nothing, and we got nothing from trending,
+        // it might mean all our feeds are exhausted. Let's try another trending feed
+        // after a short delay to avoid spamming.
+        if (addedCount === 0 && backgroundQueue.length < BACKGROUND_QUEUE_FETCH_THRESHOLD) {
+             console.log("All fetches yielded no new sites. Will try again after a short delay.");
+             setTimeout(populateBackgroundQueue, 5000); // Try again in 5s
+             return; // Exit here, the timeout will handle the next attempt.
+        }
+
     } catch (error) {
-        console.error('Error fetching background projects:', error);
+        console.error('Error fetching trending projects:', error);
+        // On error, just move to the next feed type to avoid getting stuck on a failing one.
+        currentFeedIndex = (currentFeedIndex + 1) % discoveryFeeds.length;
     } finally {
         isLoadingProjects = false;
-        // If the queue is still empty, maybe we've reached the end. Try again after a delay.
-        if (backgroundQueue.length === 0) {
-            console.log("No new projects found, will retry fetching later.");
-        }
     }
 }
 
@@ -197,19 +354,20 @@ function processQueue() {
     } else if (backgroundQueueToggle.checked) { // Check if background queue is enabled
         // Fetch more background sites if the queue is running low
         if (backgroundQueue.length < BACKGROUND_QUEUE_FETCH_THRESHOLD && !isLoadingProjects) {
-            fetchBackgroundProjects();
+            populateBackgroundQueue();
         }
         if (backgroundQueue.length > 0) {
             nextSite = backgroundQueue.shift();
             console.log(`Displaying from background queue: ${nextSite.url}. Queue length: ${backgroundQueue.length}`);
             
-            // Track displayed sites to avoid repeats
+            // Track displayed site ID to avoid repeats for the entire session.
             recentlyDisplayedSites.add(nextSite.id);
-            if (recentlyDisplayedSites.size > RECENTLY_DISPLAYED_MAX_SIZE) {
-                const oldestSite = recentlyDisplayedSites.values().next().value;
-                recentlyDisplayedSites.delete(oldestSite);
+            // Add full object to short-term history for seeding advanced discovery.
+            displayHistory.push(nextSite);
+            if(displayHistory.length > MAX_HISTORY_SIZE) {
+                displayHistory.shift();
             }
-
+            
             // Calculate duration for background sites
             let minDuration = parseInt(minDurationInput.value, 10) * 1000;
             let maxDuration = parseInt(maxDurationInput.value, 10) * 1000;
@@ -310,6 +468,39 @@ function addSiteToUserQueue(url, tags) {
     if (!isDisplayingSite) {
         processQueue();
     }
+}
+
+/**
+ * Clears the session's watched history, resets content feeds, and fetches new sites.
+ */
+function clearWatchedHistory() {
+    console.log("Clearing watched history and resetting feeds...");
+    // 1. Clear the session history set
+    recentlyDisplayedSites.clear();
+    // 2. Clear the short-term history array for seeding
+    displayHistory.length = 0;
+    // 3. Clear the background queue
+    backgroundQueue.length = 0;
+    // 4. Reset all feed offsets
+    feedOffsets.forEach((_val, key) => feedOffsets.set(key, 0));
+    // 5. Reset feed index to start from the beginning
+    currentFeedIndex = 0;
+    // 6. Stop the current site from displaying and clear the viewer
+    if (siteDisplayTimer) {
+        clearTimeout(siteDisplayTimer);
+        siteDisplayTimer = null;
+    }
+    isDisplayingSite = false;
+    currentSite = null;
+    websimFrame.src = 'about:blank';
+    
+    console.log("History cleared. Fetching new content...");
+    // 7. Immediately fetch new content and kick off the queue if the viewer is open
+    populateBackgroundQueue().then(() => {
+        if (iframeViewer.style.display === 'block') {
+            processQueue();
+        }
+    });
 }
 
 // --- APPLICATION LOGIC ---
@@ -423,6 +614,16 @@ flagButton.addEventListener('click', () => {
     flagAndSkip();
 });
 
+clearHistoryButton.addEventListener('click', clearWatchedHistory);
+
+advancedDiscoveryToggle.addEventListener('change', () => {
+    if (advancedDiscoveryToggle.checked) {
+        advancedSettingsContainer.classList.remove('hidden');
+    } else {
+        advancedSettingsContainer.classList.add('hidden');
+    }
+});
+
 document.addEventListener('keydown', (e) => {
     // Hide viewer if user presses Escape key
     if (e.key === "Escape" && iframeViewer.style.display === 'block') {
@@ -432,6 +633,10 @@ document.addEventListener('keydown', (e) => {
 });
 
 // --- INITIALIZATION ---
+// Toggle advanced settings visibility on load
+if (!advancedDiscoveryToggle.checked) {
+    advancedSettingsContainer.classList.add('hidden');
+}
 // Pre-fetch some sites on page load so we're ready to go.
-fetchBackgroundProjects();
+populateBackgroundQueue();
 loadFlaggedSites();
